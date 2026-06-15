@@ -16,6 +16,13 @@ from llama_index.core.node_parser import SentenceSplitter
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 
+import xml.etree.ElementTree as ET
+from youtube_transcript_api._errors import (
+    TranscriptsDisabled,
+    NoTranscriptFound,
+    CouldNotRetrieveTranscript,
+)
+
 logger = logging.getLogger(__name__)
 
 _YT_REGEX = re.compile(
@@ -29,9 +36,17 @@ def _extract_video_id(url: str) -> str | None:
 
 
 def _fetch_transcript(video_id: str, languages: list[str] | None = None) -> str:
-    """Fetches and concatenates the YouTube transcript (synchronous)."""
     langs = languages or ["fr", "en", "auto"]
-    transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=langs)
+    try:
+        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=langs)
+    except (TranscriptsDisabled, NoTranscriptFound, CouldNotRetrieveTranscript) as exc:
+        raise RuntimeError(f"Transcript unavailable for {video_id}") from exc
+    except ET.ParseError as exc:
+        # YouTube returned an empty/malformed XML response (rate-limit ou bloc réseau)
+        raise RuntimeError(
+            f"YouTube returned an invalid transcript response for {video_id} "
+            "(possible rate-limit or geo-block)"
+        ) from exc
     return " ".join(entry["text"] for entry in transcript_list)
 
 
@@ -57,32 +72,28 @@ class VideoIngestionPipeline:
         )
 
     async def ingest_youtube_url(
-        self,
-        url: str,
-        extra_metadata: dict[str, Any] | None = None,
+            self,
+            url: str,
+            extra_metadata: dict[str, Any] | None = None,
     ) -> int:
-        """
-        Ingest a YouTube video by its URL.
-        Returns the number of inserted chunks.
-        """
         video_id = _extract_video_id(url)
         if not video_id:
             logger.error("Invalid YouTube URL: %s", url)
-            raise ValueError(f"Unable to extract video ID from: {url}")
+            return 0  # Ne pas lever ici non plus si appelé en background
 
         logger.info("📥 Fetching transcript for %s…", video_id)
         try:
             transcript = await asyncio.to_thread(_fetch_transcript, video_id)
-        except (TranscriptsDisabled, NoTranscriptFound) as exc:
+        except Exception as exc:          # ← catch-all pour le background task
             logger.error("Transcript unavailable for %s: %s", video_id, exc)
-            raise RuntimeError(f"Transcript unavailable for {video_id}") from exc
+            return 0                      # ← on retourne proprement, sans re-raise
 
         metadata = {
-            "source": "youtube",
-            "video_id": video_id,
-            "url": url,
-            **(extra_metadata or {}),
-        }
+                "source": "youtube",
+                "video_id": video_id,
+                "url": url,
+                **(extra_metadata or {}),
+            }
         return await self._insert_text(transcript, metadata)
 
     async def ingest_text(

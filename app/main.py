@@ -8,6 +8,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+import uuid
 
 import chromadb
 from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
@@ -42,7 +43,7 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────
 _index: VectorStoreIndex | None = None
 _ingestion_pipeline: VideoIngestionPipeline | None = None
-
+_job_status: dict[str, dict] = {}
 
 def _build_index() -> VectorStoreIndex:
     """Builds or loads the index from ChromaDB."""
@@ -128,22 +129,28 @@ async def stats():
     return IndexStatsResponse(total_chunks=count)
 
 
+
 @app.post("/ingest/url", response_model=IngestResponse)
 async def ingest_url(req: IngestRequest, background_tasks: BackgroundTasks):
-    """
-    Ingest a YouTube video via its URL.
-    Ingestion is started as a background task.
-    """
-    if _ingestion_pipeline is None:
-        raise HTTPException(status_code=503, detail="Pipeline not initialized")
-
-    background_tasks.add_task(_ingestion_pipeline.ingest_youtube_url, req.url, req.metadata)
+    job_id = str(uuid.uuid4())
+    _job_status[job_id] = {"status": "pending", "url": req.url}
+    background_tasks.add_task(_run_ingest, job_id, req.url, req.metadata)
     return IngestResponse(
-        message=f"Ingestion started for: {req.url}",
-        url=req.url,
-        status="pending",
-    )
+    message=f"Ingestion started for: {req.url}",
+    url=req.url,
+    status="pending",
+)
 
+async def _run_ingest(job_id: str, url: str, metadata: dict):
+    try:
+        n = await _ingestion_pipeline.ingest_youtube_url(url, metadata)
+        _job_status[job_id] = {"status": "done", "chunks": n}
+    except Exception as exc:
+        _job_status[job_id] = {"status": "error", "detail": str(exc)}
+
+@app.get("/ingest/status/{job_id}")
+async def ingest_status(job_id: str):
+    return _job_status.get(job_id, {"status": "not_found"})
 
 @app.post("/ingest/file", response_model=IngestResponse)
 async def ingest_file(
