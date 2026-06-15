@@ -9,12 +9,16 @@ import asyncio
 import logging
 import re
 from typing import Any
+import yt_dlp
+
 
 from llama_index.core import Document, VectorStoreIndex
 from llama_index.core.ingestion import IngestionPipeline
 from llama_index.core.node_parser import SentenceSplitter
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
+from youtube_transcript_api.formatters import TextFormatter
+
 
 import xml.etree.ElementTree as ET
 from youtube_transcript_api._errors import (
@@ -34,22 +38,41 @@ def _extract_video_id(url: str) -> str | None:
     match = _YT_REGEX.search(url)
     return match.group(1) if match else None
 
-
 def _fetch_transcript(video_id: str, languages: list[str] | None = None) -> str:
-    langs = languages or ["fr", "en", "auto"]
+    langs = languages or ["fr", "en", "de-DE", "ja", "pt-BR", "es-419"]
+    
     try:
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=langs)
-    except (TranscriptsDisabled, NoTranscriptFound, CouldNotRetrieveTranscript) as exc:
-        raise RuntimeError(f"Transcript unavailable for {video_id}") from exc
+        # Passer par list_transcripts directement, plus robuste
+        transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
+        try:
+            transcript = transcripts.find_transcript(langs)
+        except NoTranscriptFound:
+            transcript = next(iter(transcripts))
+        
+        transcript_list = transcript.fetch()
+        
     except ET.ParseError as exc:
-        # YouTube returned an empty/malformed XML response (rate-limit ou bloc réseau)
         raise RuntimeError(
-            f"YouTube returned an invalid transcript response for {video_id} "
-            "(possible rate-limit or geo-block)"
+            f"YouTube returned an invalid transcript response for {video_id}"
         ) from exc
+    except Exception as exc:
+        raise RuntimeError(f"Transcript unavailable for {video_id}") from exc
+
     return " ".join(entry["text"] for entry in transcript_list)
 
-
+def _fetch_transcript_ytdlp(video_id: str) -> str:
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    ydl_opts = {
+        "writesubtitles": True,
+        "writeautomaticsub": True,
+        "subtitleslangs": ["fr", "en"],
+        "skip_download": True,
+        "quiet": True,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+        
+        
 def _parse_srt_vtt(raw: str) -> str:
     """Clean SRT/VTT files to keep only the text."""
     # Remove timestamps and HTML tags
