@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  rag-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: rag-llamaindex
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      EMBED_MODEL: ${EMBED_MODEL:-text-embedding-3-small}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.1}
+      CHUNK_SIZE: ${CHUNK_SIZE:-512}
+      CHUNK_OVERLAP: ${CHUNK_OVERLAP:-64}
+      CHROMA_PATH: /app/chroma_db
+      WORKERS: ${WORKERS:-4}
+    volumes:
+      # Persist the vector database across restarts
+      - chroma_data:/app/chroma_db
+      # Optional folder for local transcript files
+      - ./data:/app/data:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - rag-net
+
+volumes:
+  chroma_data:
+    driver: local
+
+networks:
+  rag-net:
+    driver: bridge
