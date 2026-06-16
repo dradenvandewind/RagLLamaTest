@@ -24,7 +24,7 @@ RUN python -m venv /opt/venv && \
 FROM python:3.12-slim AS runtime
 
 LABEL maintainer="erwanleblond@gmail.com"
-LABEL description="RAG LlamaIndex async — transcription vidéo YouTube"
+LABEL description="RAG LlamaIndex async — YouTube video transcription"
 
 RUN apt-get update && apt-get install -y ffmpeg firefox-esr
 

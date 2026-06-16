@@ -1,28 +1,17 @@
 """
-Async video ingestion pipeline.
+Async video ingestion pipeline utilisant yt-dlp.
 """
 
 import asyncio
 import logging
 import os
 import re
-import xml.etree.ElementTree as ET
 from typing import Any
-import json
-
-import requests
-import google.auth.transport.requests
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
+import yt_dlp
 
 from llama_index.core import Document, VectorStoreIndex
 from llama_index.core.ingestion import IngestionPipeline
 from llama_index.core.node_parser import SentenceSplitter
-from youtube_transcript_api._errors import (
-    CouldNotRetrieveTranscript,
-    NoTranscriptFound,
-    TranscriptsDisabled,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -38,63 +27,73 @@ def _extract_video_id(url: str) -> str | None:
     return match.group(1) if match else None
 
 
-def _get_youtube_client():
-    token_path = os.getenv("YOUTUBE_TOKEN_PATH", "/app/youtube_token.json")
-    with open(token_path) as f:
-        data = json.load(f)
+def _fetch_transcript_with_ytdlp(url: str) -> str:
+    """Télécharge les sous-titres (manuels ou auto) via yt-dlp sans l'API Google."""
+    ydl_opts = {
+        'skip_download': True,        # On ne veut pas la vidéo/audio, juste le texte
+        'write_auto_html': False,
+        'write_sub': True,            # Télécharger les sous-titres manuels
+        'write_auto_sub': True,       # Si pas de manuels, prendre les automatiques
+        'sub_langs': ['fr', 'en'],    # Priorité aux langues demandées
+        'cookiefile': COOKIES_PATH if os.path.exists(COOKIES_PATH) else None,
+        'quiet': True,
+    }
 
-    creds = Credentials(
-        token=data["token"],
-        refresh_token=data["refresh_token"],
-        token_uri=data["token_uri"],
-        client_id=data["client_id"],
-        client_secret=data["client_secret"],
-    )
-    if not creds.valid:
-        creds.refresh(google.auth.transport.requests.Request())
-
-    return build("youtube", "v3", credentials=creds)
-
-
-def _fetch_transcript(video_id: str, languages: list[str] | None = None) -> str:
-    langs = languages or ["fr", "en"]
-    youtube = _get_youtube_client()
-
-    # 1. List captions
-    response = youtube.captions().list(
-        part="snippet",
-        videoId=video_id,
-    ).execute()
-
-    items = response.get("items", [])
-    if not items:
-        raise RuntimeError(f"No captions found for {video_id}")
-
-    # 2. Choose the language
-    caption_id = None
-    for lang in langs:
-        for item in items:
-            if item["snippet"]["language"].startswith(lang):
-                caption_id = item["id"]
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+        
+        # Récupération des sous-titres disponibles
+        subtitles = info.get('subtitles') or {}
+        automatic_captions = info.get('automatic_captions') or {}
+        
+        # On cherche une langue disponible dans notre ordre de préférence
+        chosen_lang = None
+        is_auto = False
+        
+        for lang in ['fr', 'en']:
+            if lang in subtitles:
+                chosen_lang = lang
                 break
-        if caption_id:
-            break
-    if not caption_id:
-        caption_id = items[0]["id"]
+            elif lang in automatic_captions:
+                chosen_lang = lang
+                is_auto = True
+                break
+                
+        if not chosen_lang:
+            # Fallback sur la première langue disponible
+            if subtitles:
+                chosen_lang = list(subtitles.keys())[0]
+            elif automatic_captions:
+                chosen_lang = list(automatic_captions.keys())[0]
+                is_auto = True
+                
+        if not chosen_lang:
+            raise RuntimeError(f"Aucun sous-titre trouvé pour la vidéo {url}")
 
-    # 3. Download as SRT
-    srt = youtube.captions().download(
-        id=caption_id,
-        tfmt="srt",
-    ).execute()
+        # Demander à yt-dlp de télécharger uniquement ce sous-titre en mémoire ou format spécifique
+        # Pour faire simple avec l'API yt-dlp, on peut extraire l'URL directe du format json3/vtt
+        sub_info = automatic_captions[chosen_lang] if is_auto else subtitles[chosen_lang]
+        
+        # Trouver l'URL du format vtt ou json3
+        vtt_url = next((item['url'] for item in sub_info if item.get('ext') == 'vtt'), None)
+        if not vtt_url:
+            vtt_url = sub_info[0]['url'] # Fallback
 
-    return _parse_srt_vtt(srt.decode("utf-8"))
+        # Télécharger le contenu du sous-titre
+        import requests
+        response = requests.get(vtt_url)
+        return _parse_srt_vtt(response.text)
 
 
 def _parse_srt_vtt(raw: str) -> str:
+    """Nettoie les balises de temps et de style des fichiers SRT/VTT."""
+    # Supprime les lignes de temps (00:00:00.000 --> 00:00:00.000)
     text = re.sub(r"\d{2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[.,]\d{3}", "", raw)
+    # Supprime les balises XML/HTML (<c>, <b>, etc.)
     text = re.sub(r"<[^>]+>", "", text)
+    # Supprime les numéros de lignes (SRT)
     text = re.sub(r"^\d+$", "", text, flags=re.MULTILINE)
+    # Supprime l'en-tête WEBVTT
     text = re.sub(r"WEBVTT.*?\n", "", text)
     return " ".join(text.split())
 
@@ -113,14 +112,15 @@ class VideoIngestionPipeline:
     ) -> int:
         video_id = _extract_video_id(url)
         if not video_id:
-            logger.error("Invalid YouTube URL: %s", url)
+            logger.error("URL YouTube invalide: %s", url)
             return 0
 
-        logger.info("📥 Fetching transcript for %s…", video_id)
+        logger.info("📥 Récupération du transcript via yt-dlp pour %s…", video_id)
         try:
-            transcript = await asyncio.to_thread(_fetch_transcript, video_id)
+            # On exécute la fonction bloquante yt-dlp dans un thread séparé (async)
+            transcript = await asyncio.to_thread(_fetch_transcript_with_ytdlp, url)
         except Exception as exc:
-            logger.error("Transcript unavailable for %s: %s", video_id, exc)
+            logger.error("Transcript indisponible pour %s: %s", video_id, exc)
             return 0
 
         metadata = {
@@ -143,7 +143,7 @@ class VideoIngestionPipeline:
     async def _insert_text(self, text: str, metadata: dict[str, Any]) -> int:
         doc = Document(text=text, metadata=metadata)
         nodes = await asyncio.to_thread(self._pipeline.run, documents=[doc])
-        logger.info("📦 %d chunks generated for %s", len(nodes), metadata.get("source", "?"))
+        logger.info("📦 %d chunks générés pour %s", len(nodes), metadata.get("source", "?"))
         await asyncio.to_thread(self.index.insert_nodes, nodes)
-        logger.info("✅ %d chunks inserted into the index.", len(nodes))
+        logger.info("✅ %d chunks insérés dans l'index.", len(nodes))
         return len(nodes)

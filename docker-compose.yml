@@ -22,8 +22,8 @@ services:
       WORKERS: ${WORKERS:-4}
       YT_DLP_JS_RUNTIMES: nodejs
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY}
-      HTTP_PROXY: http://host.docker.internal:8888
-      HTTPS_PROXY: http://host.docker.internal:8888
+      #HTTP_PROXY: http://host.docker.internal:8888
+      #HTTPS_PROXY: http://host.docker.internal:8888
       YOUTUBE_TOKEN_PATH: /app/youtube_token.json
     
       

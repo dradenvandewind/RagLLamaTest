@@ -6,6 +6,7 @@ bgutil-ytdlp-pot-provider
 google-auth
 google-auth-oauthlib
 google-api-python-client
+yt-dlp
 
 # LlamaIndex core + integrations
 llama-index-core==0.12.5
