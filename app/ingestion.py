@@ -8,8 +8,10 @@ Supports:
 import asyncio
 import logging
 import re
+import os
 from typing import Any
 import yt_dlp
+import json
 
 
 from llama_index.core import Document, VectorStoreIndex
@@ -19,6 +21,7 @@ from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 from youtube_transcript_api.formatters import TextFormatter
 
+COOKIES_PATH = os.getenv("YT_COOKIES_PATH", "/app/cookies.txt")
 
 import xml.etree.ElementTree as ET
 from youtube_transcript_api._errors import (
@@ -37,28 +40,44 @@ _YT_REGEX = re.compile(
 def _extract_video_id(url: str) -> str | None:
     match = _YT_REGEX.search(url)
     return match.group(1) if match else None
+COOKIES_PATH = os.getenv("YT_COOKIES_PATH", "/app/cookies.txt")
+
 
 def _fetch_transcript(video_id: str, languages: list[str] | None = None) -> str:
-    langs = languages or ["fr", "en", "de-DE", "ja", "pt-BR", "es-419"]
-    
-    try:
-        # Passer par list_transcripts directement, plus robuste
-        transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
-        try:
-            transcript = transcripts.find_transcript(langs)
-        except NoTranscriptFound:
-            transcript = next(iter(transcripts))
-        
-        transcript_list = transcript.fetch()
-        
-    except ET.ParseError as exc:
-        raise RuntimeError(
-            f"YouTube returned an invalid transcript response for {video_id}"
-        ) from exc
-    except Exception as exc:
-        raise RuntimeError(f"Transcript unavailable for {video_id}") from exc
+    langs = languages or ["fr", "en"]
+    url = f"https://www.youtube.com/watch?v={video_id}"
 
-    return " ".join(entry["text"] for entry in transcript_list)
+    ydl_opts = {
+    "writesubtitles": True,
+    "writeautomaticsub": True,
+    "subtitleslangs": langs,
+    "subtitlesformat": "json3",
+    "skip_download": True,
+    "quiet": True,
+    "cookiefile": "/app/cookies.txt" if os.path.exists("/app/cookies.txt") else None,
+    }
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+
+    subtitles = info.get("subtitles") or {}
+    auto_captions = info.get("automatic_captions") or {}
+
+    for lang in langs:
+        for source in (subtitles, auto_captions):
+            if lang in source:
+                for fmt in source[lang]:
+                    if fmt.get("ext") == "json3":
+                        resp = requests.get(fmt["url"])
+                        data = resp.json()
+                        text = " ".join(
+                            event["segs"][0]["utf8"]
+                            for event in data.get("events", [])
+                            if event.get("segs")
+                        )
+                        return text.strip()
+
+    raise RuntimeError(f"No transcript found for {video_id}")
 
 def _fetch_transcript_ytdlp(video_id: str) -> str:
     url = f"https://www.youtube.com/watch?v={video_id}"

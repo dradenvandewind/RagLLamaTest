@@ -1,3 +1,4 @@
+
 # ──────────────────────────────────────────────
 # Stage 1: builder — install dependencies
 # ──────────────────────────────────────────────
@@ -25,11 +26,14 @@ FROM python:3.12-slim AS runtime
 LABEL maintainer="erwanleblond@gmail.com"
 LABEL description="RAG LlamaIndex async — transcription vidéo YouTube"
 
+RUN apt-get update && apt-get install -y nodejs ffmpeg
+
 WORKDIR /app
 
 # Copy only the virtualenv
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
+RUN ln -s $(which node) /usr/local/bin/node 2>/dev/null || true
 
 # Copy application code
 COPY app/ ./app/

@@ -19,11 +19,16 @@ services:
       CHUNK_OVERLAP: ${CHUNK_OVERLAP:-64}
       CHROMA_PATH: /app/chroma_db
       WORKERS: ${WORKERS:-4}
+      YT_DLP_JS_RUNTIMES: nodejs
+    
+      
     volumes:
       # Persist the vector database across restarts
       - chroma_data:/app/chroma_db
       # Optional folder for local transcript files
       - ./data:/app/data:ro
+      - ./cookies.txt:/app/cookies.txt:rw
+      
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
