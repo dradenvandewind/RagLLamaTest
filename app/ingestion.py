@@ -60,7 +60,7 @@ def _fetch_transcript(video_id: str, languages: list[str] | None = None) -> str:
     langs = languages or ["fr", "en"]
     youtube = _get_youtube_client()
 
-    # 1. Lister les captions
+    # 1. List captions
     response = youtube.captions().list(
         part="snippet",
         videoId=video_id,
@@ -70,7 +70,7 @@ def _fetch_transcript(video_id: str, languages: list[str] | None = None) -> str:
     if not items:
         raise RuntimeError(f"No captions found for {video_id}")
 
-    # 2. Choisir la langue
+    # 2. Choose the language
     caption_id = None
     for lang in langs:
         for item in items:
@@ -82,7 +82,7 @@ def _fetch_transcript(video_id: str, languages: list[str] | None = None) -> str:
     if not caption_id:
         caption_id = items[0]["id"]
 
-    # 3. Télécharger en SRT
+    # 3. Download as SRT
     srt = youtube.captions().download(
         id=caption_id,
         tfmt="srt",
