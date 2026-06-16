@@ -8,9 +8,13 @@ import os
 import re
 import xml.etree.ElementTree as ET
 from typing import Any
+import json
 
 import requests
-import yt_dlp
+import google.auth.transport.requests
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+
 from llama_index.core import Document, VectorStoreIndex
 from llama_index.core.ingestion import IngestionPipeline
 from llama_index.core.node_parser import SentenceSplitter
@@ -34,47 +38,57 @@ def _extract_video_id(url: str) -> str | None:
     return match.group(1) if match else None
 
 
+def _get_youtube_client():
+    token_path = os.getenv("YOUTUBE_TOKEN_PATH", "/app/youtube_token.json")
+    with open(token_path) as f:
+        data = json.load(f)
+
+    creds = Credentials(
+        token=data["token"],
+        refresh_token=data["refresh_token"],
+        token_uri=data["token_uri"],
+        client_id=data["client_id"],
+        client_secret=data["client_secret"],
+    )
+    if not creds.valid:
+        creds.refresh(google.auth.transport.requests.Request())
+
+    return build("youtube", "v3", credentials=creds)
+
+
 def _fetch_transcript(video_id: str, languages: list[str] | None = None) -> str:
     langs = languages or ["fr", "en"]
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    cookies = COOKIES_PATH if os.path.exists(COOKIES_PATH) else None
+    youtube = _get_youtube_client()
 
-    ydl_opts = {
-        "skip_download": True,
-        "writesubtitles": True,
-        "writeautomaticsub": True,
-        "subtitleslangs": langs,
-        "subtitlesformat": "json3",
-        "quiet": True,
-        "cookiesfrombrowser": ("firefox", "/root/.mozilla/firefox"),
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["web"],
-            }
-        },
-    }
+    # 1. Lister les captions
+    response = youtube.captions().list(
+        part="snippet",
+        videoId=video_id,
+    ).execute()
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
+    items = response.get("items", [])
+    if not items:
+        raise RuntimeError(f"No captions found for {video_id}")
 
-    subtitles = info.get("subtitles") or {}
-    auto_captions = info.get("automatic_captions") or {}
-
+    # 2. Choisir la langue
+    caption_id = None
     for lang in langs:
-        for source in (subtitles, auto_captions):
-            if lang in source:
-                for fmt in source[lang]:
-                    if fmt.get("ext") == "json3":
-                        resp = requests.get(fmt["url"])
-                        data = resp.json()
-                        text = " ".join(
-                            event["segs"][0]["utf8"]
-                            for event in data.get("events", [])
-                            if event.get("segs")
-                        )
-                        return text.strip()
+        for item in items:
+            if item["snippet"]["language"].startswith(lang):
+                caption_id = item["id"]
+                break
+        if caption_id:
+            break
+    if not caption_id:
+        caption_id = items[0]["id"]
 
-    raise RuntimeError(f"No transcript found for {video_id}")
+    # 3. Télécharger en SRT
+    srt = youtube.captions().download(
+        id=caption_id,
+        tfmt="srt",
+    ).execute()
+
+    return _parse_srt_vtt(srt.decode("utf-8"))
 
 
 def _parse_srt_vtt(raw: str) -> str:

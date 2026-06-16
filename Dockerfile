@@ -33,10 +33,10 @@ WORKDIR /app
 # Copy only the virtualenv
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-#RUN apt-get update && apt-get install -y nodejs && \
-#    ln -sf $(which node) /usr/local/bin/nodejs
-RUN apt-get update && apt-get install -y nodejs npm && \
-    npm install -g @yt-dlp/sandbox
+RUN apt-get update && apt-get install -y nodejs && \
+    ln -sf $(which node) /usr/local/bin/nodejs
+#RUN apt-get update && apt-get install -y nodejs npm && \
+#    npm install -g @yt-dlp/sandbox
 
 # Copy application code
 COPY app/ ./app/
