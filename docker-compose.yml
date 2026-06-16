@@ -6,6 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: runtime
+    user: root
     container_name: rag-llamaindex
     restart: unless-stopped
     ports:
@@ -27,7 +28,7 @@ services:
       - chroma_data:/app/chroma_db
       # Optional folder for local transcript files
       - ./data:/app/data:ro
-      - ./cookies.txt:/app/cookies.txt:rw
+      - ~/.mozilla/firefox:/root/.mozilla/firefox:ro
       
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

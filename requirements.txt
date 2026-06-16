@@ -3,6 +3,7 @@ uvicorn[standard]==0.32.1
 pydantic==2.10.3
 python-multipart
 yt-dlp
+bgutil-ytdlp-pot-provider
 
 # LlamaIndex core + integrations
 llama-index-core==0.12.5

@@ -26,14 +26,17 @@ FROM python:3.12-slim AS runtime
 LABEL maintainer="erwanleblond@gmail.com"
 LABEL description="RAG LlamaIndex async — transcription vidéo YouTube"
 
-RUN apt-get update && apt-get install -y nodejs ffmpeg
+RUN apt-get update && apt-get install -y ffmpeg firefox-esr
 
 WORKDIR /app
 
 # Copy only the virtualenv
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-RUN ln -s $(which node) /usr/local/bin/node 2>/dev/null || true
+#RUN apt-get update && apt-get install -y nodejs && \
+#    ln -sf $(which node) /usr/local/bin/nodejs
+RUN apt-get update && apt-get install -y nodejs npm && \
+    npm install -g @yt-dlp/sandbox
 
 # Copy application code
 COPY app/ ./app/
@@ -41,9 +44,7 @@ COPY app/ ./app/
 # Persistent directories (mounted via Docker volumes)
 RUN mkdir -p /app/chroma_db /app/data
 
-# Non-root user for security
-RUN useradd -m -u 1001 raguser && chown -R raguser:raguser /app
-USER raguser
+
 
 # Default environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -56,6 +57,12 @@ ENV PYTHONUNBUFFERED=1 \
     CHUNK_OVERLAP=64 \
     PORT=8000 \
     WORKERS=4
+COPY cookies.txt /app/cookies.txt
+RUN chmod 644 /app/cookies.txt
+
+# Non-root user for security
+RUN useradd -m -u 1001 raguser && chown -R raguser:raguser /app
+USER raguser
 
 EXPOSE $PORT
 
