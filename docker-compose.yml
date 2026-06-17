@@ -22,7 +22,7 @@ services:
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY}
       YOUTUBE_TOKEN_PATH: /app/youtube_token.json
       OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:1b}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:1b-ctx2k}
       ANONYMIZED_TELEMETRY: False
 
     volumes:
@@ -53,8 +53,7 @@ services:
       - "11434:11434"
     networks:
       - rag-net
-    entrypoint: ["/bin/sh", "-c", "ollama serve & pid=$! && sleep 5 && ollama pull llama3.2:1b && echo 'FROM llama3.2:1b\nPARAMETER num_ctx 2048' | ollama create llama3.2:1b-ctx2k -f - && wait $pid"]
-
+    entrypoint: ["/bin/sh", "-c", "ollama serve & pid=$! && sleep 5 && ollama pull llama3.2:1b && printf 'FROM llama3.2:1b\\nPARAMETER num_ctx 2048\\n' > /tmp/Modelfile && ollama create llama3.2:1b-ctx2k -f /tmp/Modelfile && wait $pid"]
 volumes:
   chroma_data:
     driver: local
