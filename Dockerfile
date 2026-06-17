@@ -19,6 +19,8 @@ COPY requirements.txt .
 RUN uv venv /opt/venv && \
     uv pip install --python /opt/venv/bin/python --no-cache -r requirements.txt
 
+RUN apt-get update && apt-get install -y unzip
+
 RUN apt-get install -y unzip && \
     curl -fsSL https://deno.land/install.sh | sh && \
     ln -s /root/.deno/bin/deno /usr/local/bin/deno

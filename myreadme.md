@@ -1,24 +1,40 @@
-Transcript YouTube
+# Access API documentation with your web browser
+
+http://localhost:8000/docs
+
+
+YouTube Transcript
       ↓
-  Découpage en chunks (SentenceSplitter)
+Splitting into chunks (SentenceSplitter)
       ↓
-  Conversion en vecteurs (HuggingFace embeddings)
+Conversion to vectors (HuggingFace embeddings)
       ↓
-  Stockage dans ChromaDB  ←────────────────┐
-                                           │ persiste sur disque
-Question de l'utilisateur                  │ (/app/chroma_db)
+Storage in ChromaDB  ←────────────────┐
+                                           │ Persisted to disk
+User query                  │ (/app/chroma_db)
       ↓
-  Conversion en vecteur
+Conversion to vectors
       ↓
-  Recherche de similarité dans ChromaDB
+Similarity search in ChromaDB
       ↓
-  Top-K chunks les plus proches
+Top-K closest chunks
       ↓
-  Envoyés au LLM (GPT-4o-mini) comme contexte
+Sent to the LLM (ollama) as context
       ↓
-  Réponse finale
+Final response
+
+
 
   
+# APP is UP after this log :
+
+rag-llamaindex    | INFO:     Application startup complete.
+rag-llamaindex    | INFO:     Application startup complete.
+rag-llamaindex    | INFO:app.main:✅ ChromaDB index loaded.
+rag-llamaindex    | INFO:     Application startup complete.
+
+
+
 
 # Health check
 curl http://localhost:8000/health
@@ -30,6 +46,10 @@ curl http://localhost:8000/stats
 curl -X POST http://localhost:8000/ingest/url \
   -H "Content-Type: application/json" \
   -d '{"url": "https://www.youtube.com/watch?v=VIDEO_ID", "metadata": {"title": "test"}}'
+
+curl -X POST http://localhost:8000/ingest/url \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.youtube.com/watch?v=ltS1Y4MBV_Y", "metadata": {"title": "test"}}'
 
 # Check job status (retrieve the job_id from the response)
 curl http://localhost:8000/ingest/status/{job_id}
