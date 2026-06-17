@@ -25,6 +25,8 @@ services:
       #HTTP_PROXY: http://host.docker.internal:8888
       #HTTPS_PROXY: http://host.docker.internal:8888
       YOUTUBE_TOKEN_PATH: /app/youtube_token.json
+      EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
+      ANONYMIZED_TELEMETRY: False
     
       
     volumes:
@@ -34,6 +36,7 @@ services:
       - ./data:/app/data:ro
       - ~/.mozilla/firefox:/root/.mozilla/firefox:ro
       - ./youtube_token.json:/app/youtube_token.json:ro
+      - hf_cache:/root/.cache/huggingface
       
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -43,9 +46,20 @@ services:
       start_period: 15s
     networks:
       - rag-net
+  ollama:
+    image: ollama/ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
 
+    
 volumes:
   chroma_data:
+    driver: local
+  hf_cache:
+    driver: local
+  ollama_data:
     driver: local
 
 networks:

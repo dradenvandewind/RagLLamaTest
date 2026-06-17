@@ -20,8 +20,10 @@ from llama_index.core import (
     VectorStoreIndex,
 )
 from llama_index.core.node_parser import SentenceSplitter
-from llama_index.embeddings.openai import OpenAIEmbedding
-from llama_index.llms.openai import OpenAI
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+#from llama_index.llms.openai import OpenAI
+#from llama_index.llms.anthropic import Anthropic
+from llama_index.llms.ollama import Ollama
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from pydantic import BaseModel
 
@@ -65,14 +67,29 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting the RAG LlamaIndex application...")
 
     # Global LlamaIndex configuration
+    """
     Settings.llm = OpenAI(
         model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         temperature=float(os.getenv("LLM_TEMPERATURE", "0.1")),
         api_key=os.getenv("OPENAI_API_KEY"),
     )
-    Settings.embed_model = OpenAIEmbedding(
-        model=os.getenv("EMBED_MODEL", "text-embedding-3-small"),
-        api_key=os.getenv("OPENAI_API_KEY"),
+    """
+    """
+    Settings.llm = Anthropic(
+        model=os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001"),
+        temperature=float(os.getenv("LLM_TEMPERATURE", "0.1")),
+        api_key=os.getenv("ANTHROPIC_API_KEY"),
+    )
+    """
+    
+    Settings.llm = Ollama(
+        model=os.getenv("OLLAMA_MODEL", "llama3.2"),
+        base_url=os.getenv("OLLAMA_BASE_URL", "http://ollama:11434"),
+        temperature=float(os.getenv("LLM_TEMPERATURE", "0.1")),
+    )
+    
+    Settings.embed_model = HuggingFaceEmbedding(
+        model_name=os.getenv("EMBED_MODEL", "BAAI/bge-small-en-v1.5"),
     )
     Settings.node_parser = SentenceSplitter(
         chunk_size=int(os.getenv("CHUNK_SIZE", "512")),

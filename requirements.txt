@@ -7,6 +7,9 @@ google-auth
 google-auth-oauthlib
 google-api-python-client
 yt-dlp
+llama-index-embeddings-huggingface
+sentence-transformers
+llama-index-llms-ollama
 
 # LlamaIndex core + integrations
 llama-index-core==0.12.5

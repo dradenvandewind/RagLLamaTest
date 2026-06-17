@@ -1,9 +1,7 @@
-
 # ──────────────────────────────────────────────
 # Stage 1: builder — install dependencies
 # ──────────────────────────────────────────────
 FROM python:3.12-slim AS builder
-
 WORKDIR /build
 
 # Minimal system dependencies
@@ -12,17 +10,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Install uv
+RUN curl -Ls https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
+
 # Copy and install dependencies into an isolated virtualenv
 COPY requirements.txt .
-RUN python -m venv /opt/venv && \
-    /opt/venv/bin/pip install --upgrade pip && \
-    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+RUN uv venv /opt/venv && \
+    uv pip install --python /opt/venv/bin/python --no-cache -r requirements.txt
 
+RUN apt-get install -y unzip && \
+    curl -fsSL https://deno.land/install.sh | sh && \
+    ln -s /root/.deno/bin/deno /usr/local/bin/deno
 # ──────────────────────────────────────────────
 # Stage 2: runtime — final lightweight image
 # ──────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
-
 LABEL maintainer="erwanleblond@gmail.com"
 LABEL description="RAG LlamaIndex async — YouTube video transcription"
 
@@ -33,18 +36,15 @@ WORKDIR /app
 # Copy only the virtualenv
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
+
 RUN apt-get update && apt-get install -y nodejs && \
     ln -sf $(which node) /usr/local/bin/nodejs
-#RUN apt-get update && apt-get install -y nodejs npm && \
-#    npm install -g @yt-dlp/sandbox
 
 # Copy application code
 COPY app/ ./app/
 
 # Persistent directories (mounted via Docker volumes)
 RUN mkdir -p /app/chroma_db /app/data
-
-
 
 # Default environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -57,6 +57,7 @@ ENV PYTHONUNBUFFERED=1 \
     CHUNK_OVERLAP=64 \
     PORT=8000 \
     WORKERS=4
+
 COPY cookies.txt /app/cookies.txt
 RUN chmod 644 /app/cookies.txt
 
