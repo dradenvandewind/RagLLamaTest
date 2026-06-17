@@ -250,9 +250,10 @@ async def chat_stream(req: ChatRequest):
 @app.delete("/index")
 async def reset_index():
     """Reset the index (delete all chunks)."""
+    global _index, _ingestion_pipeline   # ← ajouter _ingestion_pipeline
     chroma_client = chromadb.PersistentClient(path=os.getenv("CHROMA_PATH", "/app/chroma_db"))
     await asyncio.to_thread(chroma_client.delete_collection, "video_rag")
     await asyncio.to_thread(chroma_client.get_or_create_collection, "video_rag")
-    global _index
     _index = await asyncio.to_thread(_build_index)
+    _ingestion_pipeline = VideoIngestionPipeline(index=_index)  # ← reconstruire
     return {"message": "Index reset successfully."}
