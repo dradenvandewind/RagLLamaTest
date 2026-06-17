@@ -3,6 +3,30 @@
 http://localhost:8000/docs
 
 
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                      FastAPI (async)                    │
+│                                                         │
+│  POST /ingest/url ──► VideoIngestionPipeline            │
+│  POST /ingest/file      │                               │
+│                         ▼                               │
+│              YouTubeTranscriptAPI                       │
+│                         │                               │
+│              SentenceSplitter (chunks)                  │
+│                         │                               │
+│              OllamaEmbedding (vectors)                  │
+│                         │                               │
+│              ChromaDB (persistence)                     │
+│                         │                               │
+│  POST /chat ◄──── VectorStoreIndex.query()              │
+│  POST /chat/stream      │                               │
+│                    Ollama LLM                           │
+└─────────────────────────────────────────────────────────┘
+```
+
+
 YouTube Transcript
       ↓
 Splitting into chunks (SentenceSplitter)
